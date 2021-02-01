@@ -55,8 +55,7 @@
 ### （1）代码问题
 ```
       先运行data_processing.py，将文件夹下的图片变为统一像素，再通过wgan.py，通过dataset = datasets.ImageFolder('./', transform=trans)加载数据。
-``` 
-``` 
+      
       dataset=torchvision.datasets.ImageFolder(
                        root, transform=None, --------------------------会加载root目录底下文件夹中的全部图片，且transform可自己定义
                        target_transform=None, 
@@ -76,6 +75,17 @@
                                           ])
                 dataset = datasets.ImageFolder('./', transform=trans) 
 ```   
+```  
+      出现：RuntimeError: invalid argument 0: Sizes of tensors must match except in dime
+      这种错误有两种可能：
+          1.你输入的图像数据的维度不完全是一样的，比如是训练的数据有100组，其中99组是256*256，但有一组是384*384，这样会导致Pytorch的检查程序报错。
+          2.比较隐晦的batchsize的问题，Pytorch中检查你训练维度正确是按照每个batchsize的维度来检查的，比如你有1000组数据（假设每组数据为三通道256px*256px的图像），batchsize为4，那么每次训练             则提取(4,3,256,256)维度的张量来训练，刚好250个epoch解决(250*4=1000)。但是如果你有999组数据，你继续使用batchsize为4的话，这样999和4并不能整除，你在训练前249组时的张量维度都为               (4,3,256,256)但是最后一个批次的维度为(3,3,256,256)，Pytorch检查到(4,3,256,256) != (3,3,256,256)，维度不匹配，自然就会报错了，这可以称为一个小bug。
+      解决办法：
+          对于第一种：整理一下你的数据集保证每个图像的维度和通道数都一直即可。（本文的解决方法）
+          对于第二种：挑选一个可以被数据集个数整除的batchsize或者直接把batchsize设置为1即可。
+
+```  
+
 
 ### （2）关于VAE和GAN的区别
   * 1.VAE和GAN都是目前来看效果比较好的生成模型，本质区别我觉得这是两种不同的角度，VAE希望通过一种显式(explicit)的方法找到一个概率密度，并通过最小化对数似函数的下限来得到最优解；
@@ -132,6 +142,9 @@ GAN则是对抗的方式来寻找一种平衡，不需要认为给定一个显�
 
 ## References:
 * [WGAN-GP训练流程](https://mathpretty.com/11133.html),[https://github.com/wmn7/ML_Practice/tree/master/2019_09_09](https://github.com/wmn7/ML_Practice/tree/master/2019_09_09)
+* [RuntimeError: invalid argument 0: Sizes of tensors must match except in dimension 0. Got 544 and 1935 in dimension 2 at ../aten/src/TH/generic/THTensor.cpp:711](https://www.cnblogs.com/zxj9487/p/11531888.html)
+* [PyTorch修炼二、带你详细了解并使用Dataset以及DataLoader](https://zhuanlan.zhihu.com/p/128679151)
+
 * [深度学习与TensorFlow 2入门实战（完整版）](https://www.bilibili.com/video/BV1HV411q7xD?from=search&seid=14089320887830328110)---龙曲良
 * [https://towardsdatascience.com/understanding-variational-autoencoders-vaes-f70510919f73](https://towardsdatascience.com/understanding-variational-autoencoders-vaes-f70510919f73) ---[Joseph Rocca](https://medium.com/@joseph.rocca)
 * [https://zhuanlan.zhihu.com/p/24767059](https://zhuanlan.zhihu.com/p/24767059)

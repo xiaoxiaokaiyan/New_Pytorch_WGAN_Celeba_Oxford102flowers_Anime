@@ -299,7 +299,8 @@ outputs = D(images)
 
 
 ## References:
-* [WGAN-GP训练流程](https://mathpretty.com/11133.html),[https://github.com/wmn7/ML_Practice/tree/master/2019_09_09](https://github.com/wmn7/ML_Practice/tree/master/2019_09_09)
+* [WGAN-GP训练流程---对本代码的详细讲解](https://mathpretty.com/11133.html)
+* [https://github.com/wmn7/ML_Practice/tree/master/2019_09_09](https://github.com/wmn7/ML_Practice/tree/master/2019_09_09)
 * [RuntimeError: invalid argument 0: Sizes of tensors must match except in dimension 0. Got 544 and 1935 in dimension 2 at ../aten/src/TH/generic/THTensor.cpp:711](https://www.cnblogs.com/zxj9487/p/11531888.html)
 * [PyTorch修炼二、带你详细了解并使用Dataset以及DataLoader](https://zhuanlan.zhihu.com/p/128679151)
 

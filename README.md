@@ -96,46 +96,204 @@ GAN则是对抗的方式来寻找一种平衡，不需要认为给定一个显�
 
 
 ### （3）WGAN的核心代码
-
+  * 1.接着我们来定义网络, 我们首先定义分类器(discriminator), 这里我们是用来做动漫头像的分类.
 ```
-    def gradient_penalty(discriminator, batch_x, fake_image):
+   class Discriminator(nn.Module):
+    def __init__(self):
+        super(Discriminator, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=4, stride=2, padding=1, bias=False)
+        self.batchN1 = nn.BatchNorm2d(64)
+        self.LeakyReLU1 = nn.LeakyReLU(0.2, inplace=True)
+        
+        self.conv2 = nn.Conv2d(in_channels=64, out_channels=64*2, kernel_size=4, stride=2, padding=1, bias=False)
+        self.batchN2 = nn.BatchNorm2d(64*2)
+        self.LeakyReLU2 = nn.LeakyReLU(0.2, inplace=True)       
 
-        batchsz = batch_x.shape[0]
+        self.conv3 = nn.Conv2d(in_channels=64*2, out_channels=64*4, kernel_size=4, stride=2, padding=1, bias=False)
+        self.batchN3 = nn.BatchNorm2d(64*4)
+        self.LeakyReLU3 = nn.LeakyReLU(0.2, inplace=True)
+        
+        self.conv4 = nn.Conv2d(in_channels=64*4, out_channels=64*8, kernel_size=4, stride=2, padding=1, bias=False)
+        self.batchN4 = nn.BatchNorm2d(64*8)
+        self.LeakyReLU4 = nn.LeakyReLU(0.2, inplace=True)
+        
+        self.conv5 = nn.Conv2d(in_channels=64*8, out_channels=1, kernel_size=4, bias=False)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        x = self.LeakyReLU1(self.batchN1(self.conv1(x)))
+        x = self.LeakyReLU2(self.batchN2(self.conv2(x)))
+        x = self.LeakyReLU3(self.batchN3(self.conv3(x)))
+        x = self.LeakyReLU4(self.batchN4(self.conv4(x)))
+        x = self.conv5(x)
+        return x
+```
 
-        # [b, h, w, c]
-        t = tf.random.uniform([batchsz, 1, 1, 1])
-        # [b, 1, 1, 1] => [b, h, w, c]
-        t = tf.broadcast_to(t, batch_x.shape)
+* 2.我们有的时候会测试一下我们的D是否是正确的, 于是我们可以从训练样本中抽取出一些来进行测试.
+```
+# 真实的图片
+images = torch.stack(([dataset[i][0] for i in range(batch_size)]))
+# 测试D是否与想象的是一样的
+outputs = D(images)
+```
 
-        interplate = t * batch_x + (1 - t) * fake_image                             #gp部分公式
+* 3.接着我们定义生成器(generator), 生成器是输入随机数, 生成我们要模仿的动漫头像(Anime-Face).
+```
+  class Generator(nn.Module):
+      def __init__(self):
+          super(Generator, self).__init__()
+          self.ConvT1 = nn.ConvTranspose2d(in_channels=100, out_channels=64*8, kernel_size=4, bias=False) # 这里的in_channels是和初始的随机数有关
+          self.batchN1 = nn.BatchNorm2d(64*8)
+          self.relu1 = nn.ReLU()
 
-        with tf.GradientTape() as tape:
-            tape.watch([interplate])                                                #gp部分公式
-            d_interplote_logits = discriminator(interplate)
-        grads = tape.gradient(d_interplote_logits, interplate)
+          self.ConvT2 = nn.ConvTranspose2d(in_channels=64*8, out_channels=64*4, kernel_size=4, stride=2, padding=1, bias=False) # 这里的in_channels是和初始的随机数有关
+          self.batchN2 = nn.BatchNorm2d(64*4)
+          self.relu2 = nn.ReLU()        
 
-        # grads:[b, h, w, c] => [b, -1]
-        grads = tf.reshape(grads, [grads.shape[0], -1])                             #gp部分公式
-        gp = tf.norm(grads, axis=1) #[b]
-        gp = tf.reduce_mean( (gp-1)**2 )
+          self.ConvT3= nn.ConvTranspose2d(in_channels=64*4, out_channels=64*2, kernel_size=4, stride=2, padding=1, bias=False) # 这里的in_channels是和初始的随机数有关
+          self.batchN3 = nn.BatchNorm2d(64*2)
+          self.relu3 = nn.ReLU()
 
-        return gp
-    
-    def d_loss_fn(generator, discriminator, batch_z, batch_x, is_training):
-        # 1. treat real image as real
-        # 2. treat generated image as fake
-        fake_image = generator(batch_z, is_training)
-        d_fake_logits = discriminator(fake_image, is_training)
-        d_real_logits = discriminator(batch_x, is_training)
+          self.ConvT4 = nn.ConvTranspose2d(in_channels=64*2, out_channels=64, kernel_size=4, stride=2, padding=1, bias=False) # 这里的in_channels是和初始的随机数有关
+          self.batchN4 = nn.BatchNorm2d(64)
+          self.relu4 = nn.ReLU()
 
-        d_loss_real = celoss_ones(d_real_logits)
-        d_loss_fake = celoss_zeros(d_fake_logits)
-        gp = gradient_penalty(discriminator, batch_x, fake_image)                #wgan较gan的不同之处，gp
+          self.ConvT5 = nn.ConvTranspose2d(in_channels=64, out_channels=3, kernel_size=4, stride=2, padding=1, bias=False)
+          self.tanh = nn.Tanh() # 激活函数
 
-        loss = d_loss_fake + d_loss_real + 1. * gp              ---------------------------------WGAN loss
+      def forward(self, x):
+          x = self.relu1(self.batchN1(self.ConvT1(x)))
+          x = self.relu2(self.batchN2(self.ConvT2(x)))
+          x = self.relu3(self.batchN3(self.ConvT3(x)))
+          x = self.relu4(self.batchN4(self.ConvT4(x)))
+          x = self.ConvT5(x)
+          x = self.tanh(x)
+          return x
+          
+```
+* 4.同样的, 我们可以测试一下G是否是和我们想象中是一样进行工作的. 我们使用下面的方式进行测试.
+```
+  noise = Variable(torch.randn(batch_size, 100, 1, 1)).to(device) # 随机噪声，生成器输入
+  # 测试G
+  fake_images = G(noise)
+```
 
-        return loss, gp
+* 5.加载数据集&定义辅助函数.
+```
+  trans = transforms.Compose([
+          transforms.Resize(64),
+          transforms.ToTensor(),
+          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+      ])
+  dataset = datasets.ImageFolder('./', transform=trans) # 数据路径
+  dataloader = torch.utils.data.DataLoader(dataset,
+                                          drop_last=True,
+                                          batch_size=512, # 批量大小
+                                          shuffle=False # 乱序  
+                                          num_workers=2 # 多进程
+                                          )
+```
 
+* 6.因为我们进行了归一化, 所以在图像最后进行保存的时候, 我们需要进行还原, 所以我们定义一个辅助函数来帮助进行还原.
+```
+  # 定义辅助函数
+  def denorm(x):
+      out = (x + 1) / 2
+      return out.clamp(0, 1)
+```
+
+* 7.接着我们训练分类器(discriminator), 在训练WGAN-GP的discriminator的时候, 他是由三个部分的loss来组成的. 下面我们来每一步进行分解了进行查看.
+  * 首先我们定义好要使用的real_label=1和fake_label=0, 和G需要使用的noise.
+```
+  batch_size = images.size(0)
+  #images = images.reshape(batch_size, 3, 64, 64).to(device)
+  mages = images.reshape(batch_size, 3, 64, 64).to(device)
+  # 创造real label和fake label
+  real_labels = torch.ones(batch_size, 1).to(device) # real的pic的label都是1
+  fake_labels = torch.zeros(batch_size, 1).to(device) # fake的pic的label都是0
+  noise = Variable(torch.randn(batch_size, 100, 1, 1)).to(device) # 随机噪声，生成器输入
+```
+  * 接着我们计算loss的第一个组成部分(这里参考WGAN-GP的loss的计算公式).
+```
+  # 首先计算真实的图片的loss, d_loss_real
+  outputs = D(images)
+  d_loss_real = -torch.mean(outputs)
+```
+  * 接着我们计算loss的第二个组成部分.
+```
+  # 接着计算假的图片的loss, d_loss_fake
+  fake_images = G(noise)
+  outputs = D(fake_images)
+  d_loss_fake = torch.mean(outputs)
+```
+  * 接着我们计算penalty region的loss, 也就是我们希望在penalty region中的梯度是越接近1越好,如上面图WGAN-Gradient-Penalty.
+```
+  # 接着计算penalty region 的loss, d_loss_penalty
+  # 生成penalty region
+  alpha = torch.rand((batch_size, 1, 1, 1)).to(device)
+  x_hat = alpha * images.data + (1 - alpha) * fake_images.data
+  x_hat.requires_grad = True
+```
+  * 接着我们来计算他们的梯度, 我们希望梯度是越接近1越好.
+```
+  # 将中间的值进行分类
+  pred_hat = D(x_hat)
+  # 计算梯度
+  gradient = torch.autograd.grad(outputs=pred_hat, inputs=x_hat, grad_outputs=torch.ones(pred_hat.size()).to(device),
+                     create_graph=False, retain_graph=False)
+  # 这里的梯度计算完毕之后是在每一个像素点处都是有梯度的值的.计算出每一张图, 每一个像素点处的梯度
+  gradient[0].shape
+  """
+  torch.Size([36, 3, 64, 64])
+  """
+```
+  * 接着我们计算L2范数.
+```
+  penalty_lambda = 10 # 梯度惩罚系数
+  gradient_penalty = penalty_lambda * ((gradient[0].view(gradient[0].size()[0], -1).norm(p=2,dim=1)-1)**2).mean()
+```
+  * 最后只需要把上面的三个部分相加, 进行反向传播来进行优化即可.
+```
+  # 三个loss相加, 反向传播进行优化
+  d_loss = d_loss_real + d_loss_fake + gradient_penalty
+  g_optimizer.zero_grad() # 两个优化器梯度都要清0
+  d_optimizer.zero_grad()
+  d_loss.backward()
+  d_optimizer.step()
+```
+* 8.训练Generator
+```
+  normal_noise = Variable(torch.randn(batch_size, 100, 1, 1)).normal_(0, 1).to(device)
+  fake_images = G(normal_noise) # 生成假的图片
+  outputs = D(fake_images) # 放入辨别器
+  g_loss = -torch.mean(outputs) # 希望生成器生成的图片判别器可以判别为真
+  d_optimizer.zero_grad()
+  g_optimizer.zero_grad()
+  g_loss.backward()
+  g_optimizer.step()
+```
+* 9.我们将上面的步骤重复N次, 反复训练D和G, 并将结果进行保存. 下面我们来看一下最后生成器生成的效果.首先我们导入已经训练好的模型.
+```
+  G = Generator().to(device) # 定义生成器
+  # 读入生成器的模型
+  G.load_state_dict(torch.load('./models/G.ckpt', map_location='cpu'))
+  def show(img):
+      """
+      用来显示图片的
+      """
+      plt.figure(figsize=(24, 16))
+      npimg = img.detach().numpy()
+      plt.imshow(np.transpose(npimg, (1,2,0)), interpolation='nearest')
+  # 使用生成器来进行生成
+  test_noise = Variable(torch.FloatTensor(40, 100, 1, 1).normal_(0, 1)).to(device)
+  fake_image = G(test_noise)
+  show(make_grid(fake_image, nrow=8, padding=1, normalize=True, range=(-1, 1), scale_each=False, pad_value=0.5))
+```
+* 10.随机取出两个图片.
+```
+  test_noise = Variable(torch.FloatTensor(2, 100, 1, 1).normal_(0, 1)).to(device)
+  fake_image = G(test_noise)
+  show(make_grid(fake_image, nrow=2, padding=1, normalize=True, range=(-1, 1), scale_each=False, pad_value=0.5))
 ```
 <br/>
 

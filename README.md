@@ -203,7 +203,7 @@ outputs = D(images)
 ```
 
 * 7.接着我们训练分类器(discriminator), 在训练WGAN-GP的discriminator的时候, 他是由三个部分的loss来组成的. 下面我们来每一步进行分解了进行查看.
-  * 首先我们定义好要使用的real_label=1和fake_label=0, 和G需要使用的noise.
+* 7.1首先我们定义好要使用的real_label=1和fake_label=0, 和G需要使用的noise.
 ```
   batch_size = images.size(0)
   #images = images.reshape(batch_size, 3, 64, 64).to(device)
@@ -213,20 +213,20 @@ outputs = D(images)
   fake_labels = torch.zeros(batch_size, 1).to(device) # fake的pic的label都是0
   noise = Variable(torch.randn(batch_size, 100, 1, 1)).to(device) # 随机噪声，生成器输入
 ```
-  * 接着我们计算loss的第一个组成部分(这里参考WGAN-GP的loss的计算公式).
+  * 7.2接着我们计算loss的第一个组成部分(这里参考WGAN-GP的loss的计算公式).
 ```
   # 首先计算真实的图片的loss, d_loss_real
   outputs = D(images)
   d_loss_real = -torch.mean(outputs)
 ```
-  * 接着我们计算loss的第二个组成部分.
+  * 7.3接着我们计算loss的第二个组成部分.
 ```
   # 接着计算假的图片的loss, d_loss_fake
   fake_images = G(noise)
   outputs = D(fake_images)
   d_loss_fake = torch.mean(outputs)
 ```
-  * 接着我们计算penalty region的loss, 也就是我们希望在penalty region中的梯度是越接近1越好,如上面图WGAN-Gradient-Penalty.
+  * 7.4接着我们计算penalty region的loss, 也就是我们希望在penalty region中的梯度是越接近1越好,如上面图WGAN-Gradient-Penalty.
 ```
   # 接着计算penalty region 的loss, d_loss_penalty
   # 生成penalty region
@@ -234,7 +234,7 @@ outputs = D(images)
   x_hat = alpha * images.data + (1 - alpha) * fake_images.data
   x_hat.requires_grad = True
 ```
-  * 接着我们来计算他们的梯度, 我们希望梯度是越接近1越好.
+  * 7.5接着我们来计算他们的梯度, 我们希望梯度是越接近1越好.
 ```
   # 将中间的值进行分类
   pred_hat = D(x_hat)
@@ -247,12 +247,12 @@ outputs = D(images)
   torch.Size([36, 3, 64, 64])
   """
 ```
-  * 接着我们计算L2范数.
+  * 7.6接着我们计算L2范数.
 ```
   penalty_lambda = 10 # 梯度惩罚系数
   gradient_penalty = penalty_lambda * ((gradient[0].view(gradient[0].size()[0], -1).norm(p=2,dim=1)-1)**2).mean()
 ```
-  * 最后只需要把上面的三个部分相加, 进行反向传播来进行优化即可.
+  * 7.7最后只需要把上面的三个部分相加, 进行反向传播来进行优化即可.
 ```
   # 三个loss相加, 反向传播进行优化
   d_loss = d_loss_real + d_loss_fake + gradient_penalty

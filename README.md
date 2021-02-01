@@ -54,11 +54,27 @@
 ## Experience：
 ### （1）代码问题
 ```
-      # [b, 28, 28] => [b, 28, 28]
-      x_concat1 = tf.concat([x, x_hat], axis=0)
-
-      # [b, 28, 28] => [2b, 28, 28]
-      x_concat1 = tf.reshape(tf.concat([x, x_hat], axis=0),[-1, 28, 28])  ---------此处必须重新reshape，才能得到[2b, 28, 28]，才能生成Visualization Results第一幅图
+      先运行data_processing.py，将文件夹下的图片变为统一像素，再通过wgan.py，通过dataset = datasets.ImageFolder('./', transform=trans)加载数据。
+``` 
+``` 
+      dataset=torchvision.datasets.ImageFolder(
+                       root, transform=None, --------------------------会加载root目录底下文件夹中的全部图片，且transform可自己定义
+                       target_transform=None, 
+                       loader=<function default_loader>, 
+                       is_valid_file=None)
+                       
+      root：图片存储的根目录，即各类别文件夹所在目录的上一级目录。
+      transform：对图片进行预处理的操作（函数），原始图片作为输入，返回一个转换后的图片。
+      target_transform：对图片类别进行预处理的操作，输入为 target，输出对其的转换。如果不传该参数，即对 target 不做任何转换，返回的顺序索引 0,1, 2…
+      loader：表示数据集加载方式，通常默认加载方式即可。
+      is_valid_file：获取图像文件的路径并检查该文件是否为有效文件的函数(用于检查损坏文件)
+          如：
+                trans = transforms.Compose([
+                                              transforms.Resize(64),
+                                              transforms.ToTensor(),
+                                              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+                                          ])
+                dataset = datasets.ImageFolder('./', transform=trans) 
 ```   
 
 ### （2）关于VAE和GAN的区别
@@ -68,110 +84,8 @@ GAN则是对抗的方式来寻找一种平衡，不需要认为给定一个显�
   * 3.要求得一个生成模型使其生成数据的分布 能够最小化与真实数据分布之间的某种分布差异度量，例如KL散度、JS散度、Wasserstein距离等。采用不同的差异度量会导出不同的loss function，比如KL散度会导出极大似然估计，JS散度会产生最原始GAN里的判别器，Wasserstein距离通过dual form会引入critic。而不同的深度生成模型，具体到GAN、VAE还是flow model，最本质的区别就是从不同的视角来看待数据生成的过程，从而采用不同的数据分布模型来表达。 [https://www.zhihu.com/question/317623081](https://www.zhihu.com/question/317623081)
   * 4.描述的是分布之间的距离而不是样本的距离。[https://blog.csdn.net/Mark_2018/article/details/105400648](https://blog.csdn.net/Mark_2018/article/details/105400648)
 
-### （3）GAN的核心代码
-```
-    class Discriminator(keras.Model):
 
-        def __init__(self):
-            super(Discriminator, self).__init__()
-
-            # [b, 64, 64, 3] => [b, 1]
-            self.conv1 = layers.Conv2D(64, 5, 3, 'valid')
-
-            self.conv2 = layers.Conv2D(128, 5, 3, 'valid')
-            self.bn2 = layers.BatchNormalization()
-
-            self.conv3 = layers.Conv2D(256, 5, 3, 'valid')
-            self.bn3 = layers.BatchNormalization()
-
-            # [b, h, w ,c] => [b, -1]
-            self.flatten = layers.Flatten()
-            self.fc = layers.Dense(1)
-
-
-        def call(self, inputs, training=None):
-
-            x = tf.nn.leaky_relu(self.conv1(inputs))
-            x = tf.nn.leaky_relu(self.bn2(self.conv2(x), training=training))
-            x = tf.nn.leaky_relu(self.bn3(self.conv3(x), training=training))
-
-            # [b, h, w, c] => [b, -1]
-            x = self.flatten(x)
-            # [b, -1] => [b, 1]
-            logits = self.fc(x)
-
-            return logits
-            
-    class Generator(keras.Model):
-
-        def __init__(self):
-            super(Generator, self).__init__()
-
-            # z: [b, 100] => [b, 3*3*512] => [b, 3, 3, 512] => [b, 64, 64, 3]
-            self.fc = layers.Dense(3*3*512)
-
-            self.conv1 = layers.Conv2DTranspose(256, 3, 3, 'valid')
-            self.bn1 = layers.BatchNormalization()
-
-            self.conv2 = layers.Conv2DTranspose(128, 5, 2, 'valid')
-            self.bn2 = layers.BatchNormalization()
-
-            self.conv3 = layers.Conv2DTranspose(3, 4, 3, 'valid')
-
-        def call(self, inputs, training=None):
-            # [z, 100] => [z, 3*3*512]
-            x = self.fc(inputs)
-            x = tf.reshape(x, [-1, 3, 3, 512])
-            x = tf.nn.leaky_relu(x)
-
-            #
-            x = tf.nn.leaky_relu(self.bn1(self.conv1(x), training=training))
-            x = tf.nn.leaky_relu(self.bn2(self.conv2(x), training=training))
-            x = self.conv3(x)
-            x = tf.tanh(x)
-
-            return x
-
-    def celoss_ones(logits):
-        # [b, 1]
-        # [b] = [1, 1, 1, 1,]
-        loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,                #logits经sigmoid函数激活之后的交叉熵
-                                      labels=tf.ones_like(logits))        #该操作返回一个具有和给定logits相同形状（shape）和相同数据类型（dtype），但是所有的元素都被设置为1的tensor
-
-        return tf.reduce_mean(loss)
-    
-    
-    def celoss_zeros(logits):
-        # [b, 1]
-        # [b] = [1, 1, 1, 1,]
-        loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits,
-                                      labels=tf.zeros_like(logits))      #该操作返回一个具有和给定logits相同形状（shape）和相同数据类型（dtype），但是所有的元素都被设置为0的tensor
-        return tf.reduce_mean(loss)
-    
-    
-    def g_loss_fn(generator, discriminator, batch_z, is_training):
-
-        fake_image = generator(batch_z, is_training)
-        d_fake_logits = discriminator(fake_image, is_training)
-        loss = celoss_ones(d_fake_logits)
-
-        return loss
-    
-    def d_loss_fn(generator, discriminator, batch_z, batch_x, is_training):
-        # 1. treat real image as real
-        # 2. treat generated image as fake
-        fake_image = generator(batch_z, is_training)
-        d_fake_logits = discriminator(fake_image, is_training)
-        d_real_logits = discriminator(batch_x, is_training)
-
-        d_loss_real = celoss_ones(d_real_logits)
-        d_loss_fake = celoss_zeros(d_fake_logits)
-
-        loss = d_loss_fake + d_loss_real                    -----------------------------GAN loss
-
-        return loss
-```
-### （4）WGAN的核心代码（对GAN）
+### （3）WGAN的核心代码
 
 ```
     def gradient_penalty(discriminator, batch_x, fake_image):
@@ -217,6 +131,7 @@ GAN则是对抗的方式来寻找一种平衡，不需要认为给定一个显�
 
 
 ## References:
+* [WGAN-GP训练流程](https://mathpretty.com/11133.html),[https://github.com/wmn7/ML_Practice/tree/master/2019_09_09](https://github.com/wmn7/ML_Practice/tree/master/2019_09_09)
 * [深度学习与TensorFlow 2入门实战（完整版）](https://www.bilibili.com/video/BV1HV411q7xD?from=search&seid=14089320887830328110)---龙曲良
 * [https://towardsdatascience.com/understanding-variational-autoencoders-vaes-f70510919f73](https://towardsdatascience.com/understanding-variational-autoencoders-vaes-f70510919f73) ---[Joseph Rocca](https://medium.com/@joseph.rocca)
 * [https://zhuanlan.zhihu.com/p/24767059](https://zhuanlan.zhihu.com/p/24767059)
